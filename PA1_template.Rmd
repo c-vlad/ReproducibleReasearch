@@ -1,0 +1,147 @@
+Reproducible Research Assignment 1
+==================================
+C. Vlad  
+*July 16, 2014*
+
+## Executive summary
+
+This study on data from a personal activity monitoring device is made in the context of the first assignment of the Coursera class on Reproducible Research teached by Roger D. Peng, PhD, Jeff Leek, PhD, Brian Caffo, PhD
+
+## Loading and preprocessing the data
+
+Loading libraries
+```{r, echo=TRUE, message=FALSE}
+library(dplyr)
+library(lattice)
+```
+
+Loading data in the *activity* table and transforming the *date* column in *POSIXct* format.
+Creating aggregations by date and by interval.
+
+```{r reading and aggregating data, echo=TRUE}
+# reading data
+activity <- read.csv("activity.csv", as.is = TRUE)
+
+# transforming date
+activity$date <- as.POSIXct (activity$date, format="%Y-%m-%d")
+
+# aggregating by date
+groupByDate <- group_by(activity, date)
+aggByDate <- summarise(groupByDate,
+                       sumSteps = sum(steps),
+                       meanSteps = mean(steps),
+                       medianSteps = median(steps)
+                       )
+
+# aggregating by interval
+groupByInterval <- group_by(activity, interval)
+aggByInterval <- summarise(groupByInterval,
+                       meanSteps = mean(steps, na.rm = TRUE)
+                       )
+```
+
+## What is mean total number of steps taken per day?
+
+```{r Mean total number of steps taken per day, echo=TRUE, fig.cap="Mean total number of steps taken per day"}
+# total number of spots per day
+with(aggByDate, plot(date, sumSteps, type="h"))
+```
+
+Calculating mean and median total number of spots per day
+```{r mean and median total number of spots per day, echo=TRUE}
+meanTotalSteps <- mean(aggByDate$sumSteps, na.rm = TRUE)
+medianTotalSteps <- median(aggByDate$sumSteps, na.rm = TRUE)
+```
+
+Mean total number of steps taken per day is `r meanTotalSteps`.
+Median total number of steps taken per day is `r medianTotalSteps`.
+
+## What is the average daily activity pattern?
+
+Mean number of steps by interval on the days of the study
+```{r Mean number of steps by interval on the days of the study, echo=TRUE, fig.cap="Mean number of steps by interval on the days of the study"}
+with(aggByInterval, plot(interval, meanSteps, type="l"))
+```
+
+Finding maximum mean number of steps by interval
+```{r maximum mean number of steps by interval, echo=TRUE}
+maxMeanStepsByIntervalIndex <- which.max(aggByInterval$meanSteps)
+maxMeanStepsByInterval <- aggByInterval$meanSteps[maxMeanStepsByIntervalIndex]
+intervalWithMaxMeanSteps <- aggByInterval$interval[maxMeanStepsByIntervalIndex]
+```
+Maximum mean number of steps by interval is `r maxMeanStepsByInterval` and is obtained for interval `r intervalWithMaxMeanSteps`.
+
+## Imputing missing values
+Calculating total number of rows with missing values in the dataset
+```{r total number of rows with missing values, echo=TRUE}
+# activity.completeCases[i] == TRUE <=> activity[i,] does not contain NAs
+activity.completeCases <- complete.cases(activity)
+
+# calculating total number of rows with missing values
+totRowsWithMissingValues <- length(activity.completeCases[activity.completeCases == FALSE])
+```
+Total number of rows with missing values in the dataset is `r totRowsWithMissingValues`.
+
+Are there rows with missing dates or intervals ?
+```{r rows with missing dates or intervals}
+nbRowsWithMissingDate <- length(activity$date[is.na(activity$date) == TRUE])
+nbRowsWithMissingInterval <- length(activity$interval[is.na(activity$interval) == TRUE])
+```
+There are `r nbRowsWithMissingDate` rows with missing dates and `r nbRowsWithMissingInterval` rows with missing intervals. Hence all missing values are on *steps*.
+
+Creating a new dataset identical to *activity*, with missing steps replaced by the mean steps for the interval rounded to integer.
+```{r replacing missing values}
+activity.imputed <- activity
+activity.imputed$steps <- sapply(1:nrow(activity),
+                                 function(i) {
+                                     if(is.na(activity$steps[i]))
+                                         round(aggByInterval$meanSteps
+                                               [aggByInterval$interval == activity$interval[i]])
+                                     else
+                                         activity$steps[i]
+                                     }
+                                 )
+```
+
+Aggregating the dataset with imputed missing values
+
+```{r aggregating imputed}
+groupByDate.imputed <- group_by(activity.imputed, date)
+aggByDate.imputed <- summarise(groupByDate.imputed,
+                       sumSteps = sum(steps),
+                       meanSteps = mean(steps),
+                       medianSteps = median(steps)
+                       )
+```
+
+Histogram of the total number of steps taken each day
+```{r Total number of steps taken each day after imputing missing values, fig.cap="Total number of steps taken each day after imputing missing values"}
+with(aggByDate.imputed, plot(date, sumSteps, type="h"))
+```
+
+Calculating the mean and median total number of steps taken per day
+```{r Calculating the mean and median total number of steps taken per day}
+meanTotalSteps.imputed <- mean(aggByDate.imputed$sumSteps)
+medianTotalSteps.imputed <- median(aggByDate.imputed$sumSteps)
+percentageChangeMedianTotalSteps <- (medianTotalSteps - medianTotalSteps.imputed) / medianTotalSteps * 100
+```
+
+After missing values imputation, the mean total number of steps taken per day is `r meanTotalSteps.imputed` and the median total number of steps taken per day is `r medianTotalSteps.imputed`.
+
+After imputation, the mean total number of steps taken per day remains unchanged, while the median drops by `r percentageChangeMedianTotalSteps`%.
+
+## Are there differences in activity patterns between weekdays and weekends?
+
+Creating a new factor variable in the dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+```{r activity.imputed$weekdayType}
+activity.imputed$weekdayType <- 
+as.factor(sapply(weekdays(activity$date, abbreviate=TRUE),
+                 function(D) {if(D %in% c("Sun", "Sat") ) "weekend" else "weekday"}))
+```
+
+Plotting average number of steps by interval accross weekdate type.
+```{r Average number of steps by interval accross weekdat type after missing values imputation, fig.cap="Average number of steps by interval accross weekdat type after missing values imputation"}
+# aggregating on weekdayType and interval
+aggAI.WdtI <- aggregate(steps ~ weekdayType + interval, data = activity.imputed, FUN = mean)
+xyplot(steps ~ interval | weekdayType, data = aggAI.WdtI, type="l", layout = c(1, 2))
+```
